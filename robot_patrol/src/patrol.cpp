@@ -7,6 +7,8 @@
 
 using namespace std::chrono_literals;
 
+constexpr double OBSTACLE_LIMIT = 0.35;
+
 class Patrol : public rclcpp::Node {
 public:
   Patrol() : Node("robot_patrol_node") {
@@ -28,13 +30,34 @@ private:
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr subscription_;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr publisher_;
+
+  bool front_obstacle = false;
+  bool left_obstacle = false;
+  bool right_obstacle = false;
 };
 
 void Patrol::laser_scan_callback(
     const sensor_msgs::msg::LaserScan::SharedPtr msg) {
-  double avg = avg_distance(10, 10, msg);
-  RCLCPP_INFO(this->get_logger(), "Front avg obstacle distance: %.2f", avg);
+  std::string obstacle_directions = "";
+  if (avg_distance(-90, -60, msg) < OBSTACLE_LIMIT) {
+    right_obstacle = true;
+    obstacle_directions += "Right ";
+  }
+  if (avg_distance(-10, 10, msg) < OBSTACLE_LIMIT) {
+    front_obstacle = true;
+    obstacle_directions += "Front ";
+  }
+  if (avg_distance(60, 90, msg) < OBSTACLE_LIMIT) {
+    left_obstacle = true;
+    obstacle_directions += "Left ";
+  }
+
+  if (!obstacle_directions.empty()) {
+    RCLCPP_INFO(this->get_logger(), "Obstacles detected at: %s",
+                obstacle_directions.c_str());
+  }
 }
+
 void Patrol::timer_callback() {
   auto message = geometry_msgs::msg::Twist();
   message.linear.x = 0.1;
@@ -79,6 +102,7 @@ double Patrol::avg_distance(double start_angle_deg, double end_angle_deg,
   // Return the average distance
   return sum / count;
 }
+
 int main(int argc, char *argv[]) {
   rclcpp::init(argc, argv);
   rclcpp::spin(std::make_shared<Patrol>());
