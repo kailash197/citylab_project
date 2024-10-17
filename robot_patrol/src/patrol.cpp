@@ -12,13 +12,22 @@ constexpr double OBSTACLE_LIMIT = 0.35;
 class Patrol : public rclcpp::Node {
 public:
   Patrol() : Node("robot_patrol_node") {
+    // Create callback groups
+    timer_cb_group_ = this->create_callback_group(
+        rclcpp::CallbackGroupType::MutuallyExclusive);
+    laser_cb_group_ = this->create_callback_group(
+        rclcpp::CallbackGroupType::MutuallyExclusive);
+    auto subscription_options = rclcpp::SubscriptionOptions();
+    subscription_options.callback_group = laser_cb_group_;
+
     subscription_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
         "scan", 10,
-        std::bind(&Patrol::laser_scan_callback, this, std::placeholders::_1));
+        std::bind(&Patrol::laser_scan_callback, this, std::placeholders::_1),
+        subscription_options);
     publisher_ =
         this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 10);
-    timer_ = this->create_wall_timer(100ms,
-                                     std::bind(&Patrol::timer_callback, this));
+    timer_ = this->create_wall_timer(
+        100ms, std::bind(&Patrol::timer_callback, this), timer_cb_group_);
   }
 
 private:
@@ -30,6 +39,9 @@ private:
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr subscription_;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr publisher_;
+
+  rclcpp::CallbackGroup::SharedPtr timer_cb_group_;
+  rclcpp::CallbackGroup::SharedPtr laser_cb_group_;
 
   bool front_obstacle = false;
   bool left_obstacle = false;
@@ -105,7 +117,10 @@ double Patrol::avg_distance(double start_angle_deg, double end_angle_deg,
 
 int main(int argc, char *argv[]) {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<Patrol>());
+  auto patrol_node = std::make_shared<Patrol>();
+  rclcpp::executors::MultiThreadedExecutor executor;
+  executor.add_node(patrol_node);
+  executor.spin();
   rclcpp::shutdown();
   return 0;
 }
