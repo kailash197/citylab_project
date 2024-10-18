@@ -1,13 +1,13 @@
 #include "geometry_msgs/msg/twist.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
-#include <algorithm>
 #include <chrono>
 #include <cmath>
 
 using namespace std::chrono_literals;
 
 constexpr double OBSTACLE_LIMIT = 0.35;
+constexpr double LINEAR_SPEED = 0.1;
 
 class Patrol : public rclcpp::Node {
 public:
@@ -28,13 +28,13 @@ public:
         this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 10);
     timer_ = this->create_wall_timer(
         100ms, std::bind(&Patrol::timer_callback, this), timer_cb_group_);
+    RCLCPP_INFO(this->get_logger(), "Patrol Commander Created.");
   }
 
 private:
-  void laser_scan_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg);
+  void
+  laser_scan_callback(const sensor_msgs::msg::LaserScan::SharedPtr scan_msg);
   void timer_callback();
-  double avg_distance(double start_angle_deg, double end_angle_deg,
-                      const sensor_msgs::msg::LaserScan::SharedPtr msg);
 
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr subscription_;
@@ -42,77 +42,91 @@ private:
 
   rclcpp::CallbackGroup::SharedPtr timer_cb_group_;
   rclcpp::CallbackGroup::SharedPtr laser_cb_group_;
-
   bool front_obstacle = false;
   bool left_obstacle = false;
   bool right_obstacle = false;
+  double direction_;
 };
 
 void Patrol::laser_scan_callback(
-    const sensor_msgs::msg::LaserScan::SharedPtr msg) {
+    const sensor_msgs::msg::LaserScan::SharedPtr scan_message) {
+  front_obstacle = false;
+  left_obstacle = false;
+  right_obstacle = false;
+
+  // Transform radian angle to indices
+  int length = scan_message->ranges.size();
+  double angle_min = scan_message->angle_min;
+  double angle_max = scan_message->angle_max;
+
+  auto transform_index = [&](double angle) {
+    return static_cast<int>((length * (angle - angle_min)) /
+                            (angle_max - angle_min));
+  };
+  int start = transform_index(-M_PI_2), end = transform_index(M_PI_2);
+  int start_right = start, end_right = transform_index(-M_PI / 6);
+  int start_front = end_right, end_front = transform_index(M_PI / 6);
+  int start_left = end_front, end_left = end;
+
+  int obstacle_count_threshold = 10;
+  // Minimum number of rays below OBSTACLE_LIMIT to consider an obstacle
   std::string obstacle_directions = "";
-  if (avg_distance(-90, -60, msg) < OBSTACLE_LIMIT) {
-    right_obstacle = true;
-    obstacle_directions += "Right ";
+
+  // Check for front obstacle
+  int front_count = 0;
+  for (int i = start_front; i <= end_front; ++i) {
+    if (scan_message->ranges[i] < OBSTACLE_LIMIT) {
+      front_count++;
+    }
   }
-  if (avg_distance(-10, 10, msg) < OBSTACLE_LIMIT) {
+  if (front_count >= obstacle_count_threshold) {
     front_obstacle = true;
     obstacle_directions += "Front ";
   }
-  if (avg_distance(60, 90, msg) < OBSTACLE_LIMIT) {
+
+  // Check for left obstacle
+  int left_count = 0;
+  for (int i = start_left; i <= end_left; ++i) {
+    if (scan_message->ranges[i] < OBSTACLE_LIMIT) {
+      left_count++;
+    }
+  }
+  if (left_count >= obstacle_count_threshold) {
     left_obstacle = true;
     obstacle_directions += "Left ";
   }
 
-  if (!obstacle_directions.empty()) {
-    RCLCPP_INFO(this->get_logger(), "Obstacles detected at: %s",
-                obstacle_directions.c_str());
+  // Check for right obstacle
+  int right_count = 0;
+  for (int i = start_right; i <= end_right; ++i) {
+    if (scan_message->ranges[i] < OBSTACLE_LIMIT) {
+      right_count++;
+    }
+  }
+  if (right_count >= obstacle_count_threshold) {
+    right_obstacle = true;
+    obstacle_directions += "Right ";
+  }
+
+  double largest_distance = 0.0;
+  for (int i = start; i < end; i++) {
+    if (std::isfinite(scan_message->ranges[i]) &&
+        scan_message->ranges[i] > largest_distance) {
+      largest_distance = scan_message->ranges[i];
+      direction_ = -(M_PI / 2) + (i - start) * M_PI / (end - start);
+    }
   }
 }
 
 void Patrol::timer_callback() {
-  auto message = geometry_msgs::msg::Twist();
-  message.linear.x = 0.1;
-  message.angular.z = -0.2;
-  publisher_->publish(message);
-}
-
-double Patrol::avg_distance(double start_angle_deg, double end_angle_deg,
-                            const sensor_msgs::msg::LaserScan::SharedPtr msg) {
-  // Convert degrees to radians
-  double start_angle = start_angle_deg * M_PI / 180.0;
-  double end_angle = end_angle_deg * M_PI / 180.0;
-
-  // Make sure angles are within the bounds of the scan
-  start_angle = std::max(start_angle, static_cast<double>(msg->angle_min));
-
-  end_angle = std::min(end_angle, static_cast<double>(msg->angle_max));
-
-  // Get the indices for start and end angles
-  int start_index =
-      static_cast<int>((start_angle - msg->angle_min) / msg->angle_increment);
-  int end_index =
-      static_cast<int>((end_angle - msg->angle_min) / msg->angle_increment);
-
-  double sum = 0.0;
-  int count = 0;
-
-  // Loop through the relevant ranges
-  for (int i = start_index; i <= end_index; ++i) {
-    double distance = msg->ranges[i];
-    // Check if the distance is within valid range
-    if (distance >= msg->range_min && distance <= msg->range_max) {
-      sum += distance;
-      count++;
-    }
+  auto command = geometry_msgs::msg::Twist();
+  command.linear.x = LINEAR_SPEED;
+  if (!front_obstacle) {
+    command.angular.z = 0.0;
+  } else {
+    command.angular.z = direction_ / 2.0;
   }
-
-  // If no valid points, return -1 or some error indicator
-  if (count == 0)
-    return -1.0;
-
-  // Return the average distance
-  return sum / count;
+  publisher_->publish(command);
 }
 
 int main(int argc, char *argv[]) {
