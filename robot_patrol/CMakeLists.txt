@@ -32,6 +32,13 @@ DEPENDENCIES sensor_msgs std_msgs
 add_executable(robot_patrol_node src/patrol.cpp)
 ament_target_dependencies(robot_patrol_node rclcpp std_msgs sensor_msgs geometry_msgs)
 
+add_executable(robot_patrol_client_node src/patrol_with_service.cpp)
+ament_target_dependencies(robot_patrol_client_node rclcpp std_msgs sensor_msgs geometry_msgs)
+rosidl_get_typesupport_target(TARGET robot_patrol_client_node
+  ${PROJECT_NAME} "rosidl_typesupport_cpp"
+)
+target_link_libraries(robot_patrol_client_node ${PROJECT_NAME}__rosidl_typesupport_cpp)
+
 add_executable(direction_service_node src/direction_service.cpp)
 ament_target_dependencies(direction_service_node rclcpp std_msgs sensor_msgs)
 # Get the typesupport target for the package
@@ -52,6 +59,7 @@ target_link_libraries(test_service_node ${PROJECT_NAME}__rosidl_typesupport_cpp)
 
 install(TARGETS
    robot_patrol_node
+   robot_patrol_client_node
    direction_service_node
    test_service_node
    DESTINATION lib/${PROJECT_NAME}
