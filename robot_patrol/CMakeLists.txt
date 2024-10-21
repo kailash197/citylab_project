@@ -42,9 +42,18 @@ rosidl_get_typesupport_target(TARGET direction_service_node
 # Link the target with the generated interfaces using target_link_libraries
 target_link_libraries(direction_service_node ${PROJECT_NAME}__rosidl_typesupport_cpp)
 
+add_executable(test_service_node src/test_service.cpp)
+ament_target_dependencies(test_service_node rclcpp std_msgs sensor_msgs geometry_msgs)
+rosidl_get_typesupport_target(TARGET test_service_node
+  ${PROJECT_NAME} "rosidl_typesupport_cpp"
+)
+target_link_libraries(test_service_node ${PROJECT_NAME}__rosidl_typesupport_cpp)
+
+
 install(TARGETS
    robot_patrol_node
    direction_service_node
+   test_service_node
    DESTINATION lib/${PROJECT_NAME}
  )
 # Install launch files.
