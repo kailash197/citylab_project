@@ -26,7 +26,8 @@ endif()
 
 rosidl_generate_interfaces(${PROJECT_NAME} 
 "srv/GetDirection.srv"
-DEPENDENCIES sensor_msgs std_msgs
+"action/GoToPose.action"
+DEPENDENCIES geometry_msgs sensor_msgs std_msgs
 )
 
 add_executable(robot_patrol_node src/patrol.cpp)
