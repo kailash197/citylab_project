@@ -8,8 +8,11 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_action REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(tf2 REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 if(BUILD_TESTING)
@@ -57,12 +60,20 @@ rosidl_get_typesupport_target(TARGET test_service_node
 )
 target_link_libraries(test_service_node ${PROJECT_NAME}__rosidl_typesupport_cpp)
 
+add_executable(gotopose_service_node src/go_to_pose_action.cpp)
+ament_target_dependencies(gotopose_service_node rclcpp rclcpp_action std_msgs geometry_msgs nav_msgs tf2)
+rosidl_get_typesupport_target(TARGET gotopose_service_node
+  ${PROJECT_NAME} "rosidl_typesupport_cpp"
+)
+target_link_libraries(gotopose_service_node ${PROJECT_NAME}__rosidl_typesupport_cpp)
+
 
 install(TARGETS
    robot_patrol_node
    robot_patrol_client_node
    direction_service_node
    test_service_node
+   gotopose_service_node
    DESTINATION lib/${PROJECT_NAME}
  )
 # Install launch files.
